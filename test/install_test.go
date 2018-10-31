@@ -206,6 +206,17 @@ func TestInject(t *testing.T) {
 
 func TestCheckProxy(t *testing.T) {
 	prefixedNs := TestHelper.GetTestNamespace("smoke-test")
+
+	// Tests Pods and Deployments
+	for deploy, replicas := range linkerdDeployReplicas {
+		if err := TestHelper.CheckPods(TestHelper.GetLinkerdNamespace(), deploy, replicas); err != nil {
+			t.Error(fmt.Errorf("Error validating pods for deploy [%s]:\n%s", deploy, err))
+		}
+		if err := TestHelper.CheckDeployment(TestHelper.GetLinkerdNamespace(), deploy, replicas); err != nil {
+			t.Error(fmt.Errorf("Error validating deploy [%s]:\n%s", deploy, err))
+		}
+	}
+
 	out, _, err := TestHelper.LinkerdRun(
 		"check",
 		"--proxy",
