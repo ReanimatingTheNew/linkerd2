@@ -224,6 +224,7 @@ func TestCheckProxy(t *testing.T) {
 		TestHelper.GetVersion(),
 		"--namespace",
 		prefixedNs,
+		"--wait 0",
 	)
 	if err != nil {
 		t.Fatalf("Check command failed\n%s", out)
