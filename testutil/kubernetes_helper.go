@@ -101,23 +101,26 @@ func (h *KubernetesHelper) getDeployments(namespace string) (map[string]int, err
 // CheckDeployment checks that a deployment in a namespace contains the expected
 // number of replicas.
 func (h *KubernetesHelper) CheckDeployment(namespace string, deploymentName string, replicas int) error {
-	deploys, err := h.getDeployments(namespace)
-	if err != nil {
-		return err
-	}
+	err := RetryFor(DefaultRetryTimeout, func() error {
+		deploys, err := h.getDeployments(namespace)
+		if err != nil {
+			return err
+		}
 
-	count, ok := deploys[deploymentName]
-	if !ok {
-		return fmt.Errorf("Deployment [%s] in namespace [%s] not found",
-			deploymentName, namespace)
-	}
+		count, ok := deploys[deploymentName]
+		if !ok {
+			return fmt.Errorf("Deployment [%s] in namespace [%s] not found",
+				deploymentName, namespace)
+		}
 
-	if count != replicas {
-		return fmt.Errorf("Expected deployment [%s] in namespace [%s] to have [%d] replicas, but found [%d]",
-			deploymentName, namespace, replicas, count)
-	}
+		if count != replicas {
+			return fmt.Errorf("Expected deployment [%s] in namespace [%s] to have [%d] replicas, but found [%d]",
+				deploymentName, namespace, replicas, count)
+		}
 
-	return nil
+		return nil
+	})
+	return err
 }
 
 // getPods gets all pods with their pod status in the specified namespace.
@@ -137,31 +140,37 @@ func (h *KubernetesHelper) getPods(namespace string) (map[string]coreV1.PodPhase
 // CheckPods checks that a deployment in a namespace contains the expected
 // number of pods in the Running state.
 func (h *KubernetesHelper) CheckPods(namespace string, deploymentName string, replicas int) error {
-	podData, err := h.getPods(namespace)
-	if err != nil {
-		return err
-	}
+	err := RetryFor(DefaultRetryTimeout, func() error {
+		podData, err := h.getPods(namespace)
+		if err != nil {
+			return err
+		}
 
-	var runningPods []string
-	for name, status := range podData {
-		if strings.Contains(name, deploymentName) {
-			if status == "Running" {
-				runningPods = append(runningPods, name)
+		var runningPods []string
+		for name, status := range podData {
+			if strings.Contains(name, deploymentName) {
+				if status == "Running" {
+					runningPods = append(runningPods, name)
+				}
 			}
 		}
-	}
 
-	if len(runningPods) != replicas {
-		return fmt.Errorf("Expected deployment [%s] in namespace [%s] to have [%d] running pods, but found [%d]",
-			deploymentName, namespace, replicas, len(runningPods))
-	}
+		if len(runningPods) != replicas {
+			return fmt.Errorf("Expected deployment [%s] in namespace [%s] to have [%d] running pods, but found [%d]",
+				deploymentName, namespace, replicas, len(runningPods))
+		}
 
-	return nil
+		return nil
+	})
+	return err
 }
 
 // CheckService checks that a service exists in a namespace.
 func (h *KubernetesHelper) CheckService(namespace string, serviceName string) error {
-	_, err := h.clientset.CoreV1().Services(namespace).Get(serviceName, metav1.GetOptions{})
+	err := RetryFor(DefaultRetryTimeout, func() error {
+		_, err := h.clientset.CoreV1().Services(namespace).Get(serviceName, metav1.GetOptions{})
+		return err
+	})
 	return err
 }
 

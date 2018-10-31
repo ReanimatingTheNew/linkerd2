@@ -15,6 +15,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const DefaultRetryTimeout = 2 * time.Minute
+
 // TestHelper provides helpers for running the linkerd integration tests.
 type TestHelper struct {
 	linkerd    string
@@ -91,6 +93,31 @@ func NewTestHelper() *TestHelper {
 	}
 
 	return testHelper
+}
+
+// RetryFor retries a given function every second until the function returns
+// without an error, or a timeout is reached. If the timeout is reached, it
+// returns the last error received from the function.
+func RetryFor(timeout time.Duration, fn func() error) error {
+	err := fn()
+	if err == nil {
+		return nil
+	}
+
+	timeoutAfter := time.After(timeout)
+	retryAfter := time.Tick(time.Second)
+
+	for {
+		select {
+		case <-timeoutAfter:
+			return err
+		case <-retryAfter:
+			err = fn()
+			if err == nil {
+				return nil
+			}
+		}
+	}
 }
 
 // GetVersion returns the version of linkerd to test. This version corresponds
@@ -179,42 +206,20 @@ func (h *TestHelper) ValidateOutput(out, fixtureFile string) error {
 
 // CheckVersion validates the the output of the "linkerd version" command.
 func (h *TestHelper) CheckVersion(serverVersion string) error {
-	out, _, err := h.LinkerdRun("version")
-	if err != nil {
-		return fmt.Errorf("Unexpected error: %s\n%s", err.Error(), out)
-	}
-	if !strings.Contains(out, fmt.Sprintf("Client version: %s", h.version)) {
-		return fmt.Errorf("Expected client version [%s], got:\n%s", h.version, out)
-	}
-	if !strings.Contains(out, fmt.Sprintf("Server version: %s", serverVersion)) {
-		return fmt.Errorf("Expected server version [%s], got:\n%s", serverVersion, out)
-	}
-	return nil
-}
-
-// RetryFor retries a given function every second until the function returns
-// without an error, or a timeout is reached. If the timeout is reached, it
-// returns the last error received from the function.
-func (h *TestHelper) RetryFor(timeout time.Duration, fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	timeoutAfter := time.After(timeout)
-	retryAfter := time.Tick(time.Second)
-
-	for {
-		select {
-		case <-timeoutAfter:
-			return err
-		case <-retryAfter:
-			err = fn()
-			if err == nil {
-				return nil
-			}
+	err := RetryFor(DefaultRetryTimeout, func() error {
+		out, _, err := h.LinkerdRun("version")
+		if err != nil {
+			return fmt.Errorf("Unexpected error: %s\n%s", err.Error(), out)
 		}
-	}
+		if !strings.Contains(out, fmt.Sprintf("Client version: %s", h.version)) {
+			return fmt.Errorf("Expected client version [%s], got:\n%s", h.version, out)
+		}
+		if !strings.Contains(out, fmt.Sprintf("Server version: %s", serverVersion)) {
+			return fmt.Errorf("Expected server version [%s], got:\n%s", serverVersion, out)
+		}
+		return nil
+	})
+	return err
 }
 
 // HTTPGetURL sends a GET request to the given URL. It returns the response body
@@ -223,7 +228,7 @@ func (h *TestHelper) RetryFor(timeout time.Duration, fn func() error) error {
 // giving pods time to start.
 func (h *TestHelper) HTTPGetURL(url string) (string, error) {
 	var body string
-	err := h.RetryFor(30*time.Second, func() error {
+	err := RetryFor(DefaultRetryTimeout, func() error {
 		resp, err := h.httpClient.Get(url)
 		if err != nil {
 			return err
